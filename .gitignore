@@ -1,0 +1,11 @@
+# Local evaluation material and ground truth
+materialized/
+results/
+private/
+artifacts/
+*.patch
+*.log
+
+# Local Git mirrors
+*.git/
+*.git

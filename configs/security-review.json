@@ -1,0 +1,10 @@
+{
+  "skill_name": "security-review",
+  "skill_invocation": "/security-review",
+  "skill_repository": "https://github.com/joe-bell/cva.git",
+  "skill_ref": "main",
+  "skill_source_path": ".agents/skills/security-review",
+  "default_tools": ["Read", "Grep", "Glob"],
+  "output_format": "stream-json",
+  "no_session_persistence": true
+}

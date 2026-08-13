@@ -1,49 +1,50 @@
-# Linux Vulnerability Skill Evaluation Dataset
+# Linux Kernel Skill Evaluation
 
-This repository contains the public part of a 148-case Linux-kernel security-review benchmark covering June 2026 CVE cases.
+This repository is the runnable public package for the 148-case Linux-kernel
+security-review benchmark covering June 1, 2026 through July 1, 2026.
 
-The benchmark uses a **target-files plus repository-context** protocol:
+The benchmark uses **target files plus repository context**:
 
-- Each case provides every file modified by its fixing patch in `target_files`.
-- The evaluated skill starts with those files.
-- The complete before-fix Linux repository snapshot is available for headers, callers, callees, and related context.
-- The model must not receive the patch, fixed files, CVE/CWE metadata, commit hashes, or private ground truth.
+- `public/cases.csv` gives the opaque case ID and every file changed by the fix.
+- The runner materializes the complete Linux source tree at the parent commit,
+  which is the before-fix repository snapshot.
+- The selected Claude Code skill starts with the listed target files and may
+  inspect other files in that supplied repository for context.
+- CVE IDs, CWE labels, commit hashes, patches, fixed files, and private ground
+  truth are not supplied to the model.
+
+## Important Privacy Boundary
+
+The GitHub repository is intentionally public. It contains the runner and the
+public target-file manifest, but it does **not** contain the parent-hash map or
+the Linux mirror. Publishing those would make the evaluation labels and source
+construction details available to the model or to anyone inspecting the repo.
+
+Only one small operator-only input is required on the server:
+
+```text
+case_id,parent_hash
+```
+
+This is the minimum information needed to materialize a case. Do not place it
+inside a case workspace or pass it in the prompt. The full private
+`ground_truth.csv`, patches, fixed files, and semantic annotations are not
+needed by the batch runner and should remain in a separate evaluator-only
+location.
 
 ## Repository Layout
 
 ```text
 public/cases.csv                         Public 148-case manifest
-scripts/materialize_repository_case.py   Export one before-fix repository
-scripts/prepare_all_target_files_eval_dataset.py
-                                           Regenerate the all-target-file dataset
-scripts/prepare_target_context_eval_dataset.py
-                                           Compatibility wrapper for the current generator
-docs/semantic_annotation_guide.md        Manual semantic-labeling guidance
+configs/security-review.json            First skill runner configuration
+scripts/setup_server.sh                 Server bootstrap script
+scripts/create_runner_manifest.py       Reduce private ground truth to 2 columns
+scripts/materialize_repository_case.py  Export one parent-commit source tree
+scripts/run_skill_batch.py              Run one or all cases and save trajectories
+docs/semantic_annotation_guide.md       Private-labeling guidance
 ```
 
-The repository does not contain 148 full Linux source trees. Trees are materialized on demand from a local bare Git mirror.
-
-## Public Manifest
-
-`public/cases.csv` has three columns:
-
-| Column | Meaning |
-|---|---|
-| `case_id` | Opaque identifier such as `case_001`. |
-| `repository_local_path` | Where the runner should place the materialized tree. |
-| `target_files` | Semicolon-separated paths of all files changed by the fix. |
-
-Example:
-
-```text
-case_003,materialized/case_003,net/ipv4/inet_fragment.c;net/ipv4/ip_fragment.c
-```
-
-The public manifest intentionally does not contain CVE IDs, CWE IDs, commit hashes, patch paths, or fixed-file paths.
-
-## Dataset Distribution
-
-The 148 cases use the following June 2026 CWE strata:
+The five sampling strata are:
 
 | CWE | Cases |
 |---|---:|
@@ -54,120 +55,208 @@ The 148 cases use the following June 2026 CWE strata:
 | CWE-787 | 16 |
 | **Total** | **148** |
 
-All 148 cases are positive CVE cases. This supports vulnerability-recall, CWE, and patch-localization measurements. Clean, manually reviewed negative controls are required for precision, specificity, and false-positive measurements.
+All 148 cases are positive CVE cases. Negative controls are needed for
+precision, specificity, and false-positive metrics.
 
-## Required Local Inputs
+## Server Prerequisites
 
-The following evaluator-only inputs are intentionally not committed to this public repository:
+The server needs:
 
-- The private `ground_truth.csv` manifest containing parent and fixing hashes
-- The downloaded patch and fixed-file artifacts
-- The local Linux bare Git mirror
-- Semantic-review annotations
+- Git
+- Python 3.10 or newer
+- Claude Code installed and authenticated according to the server policy
+- Network access during setup, so Git can download the Linux mirror and skill
+- A firewall, container, or network namespace that blocks model-run internet
+  access if strict no-internet evaluation is required
 
-Keep them in a separate operator-controlled directory. Do not mount them in the model environment.
+Claude Code credentials are never committed to this repository.
 
-The materializer expects a private manifest with at least these columns:
+## One-Time Server Setup
 
-```text
-case_id,parent_hash
-```
-
-The full private manifest also stores CVE/CWE labels, commit URLs, changed files, and artifact paths for post-run scoring.
-
-## Materialize One Case
-
-Run this from the repository root. Replace the placeholder paths with the operator-only locations:
+Clone this repository on the server:
 
 ```bash
-python3 scripts/materialize_repository_case.py \
-  --repo /path/to/linux-stable.git \
-  --manifest /secure/evaluator/private/ground_truth.csv \
-  --case-id case_003 \
-  --output materialized/case_003
+git clone https://github.com/xhinini/skill-vuldet.git
+cd skill-vuldet
 ```
 
-The command uses the private `parent_hash` to export the before-fix tree with `git archive`. The output is a clean source tree with no `.git` directory.
+Run the bootstrap script. The Linux mirror is a bare filtered mirror, not 148
+working-tree clones. It is downloaded from the configured Linux repository and
+provides the Git objects needed for parent-commit exports.
 
-The runner then reads the public row for `case_003` and resolves:
-
-```text
-repository root: materialized/case_003
-target files:    net/ipv4/inet_fragment.c
-                 net/ipv4/ip_fragment.c
+```bash
+bash scripts/setup_server.sh \
+  --mirror /srv/skill-vuldet-data/linux-stable.git \
+  --skill-cache /srv/skill-vuldet-data/skills/cva
 ```
 
-## Model Input
-
-Give the evaluated skill only:
-
-- The materialized repository directory
-- The `target_files` paths from the public manifest
-- The fixed evaluation prompt
-- The selected skill
-
-Use a prompt equivalent to:
+The default sources are:
 
 ```text
+Linux: https://github.com/gregkh/linux.git
+Skill: https://github.com/joe-bell/cva.git
+Skill path: .agents/skills/security-review
+```
+
+The skill checkout includes `SKILL.md` and its supporting reference files. The
+runner records the checked-out skill revision in each `run.json` file.
+
+Plan for tens of gigabytes for the Linux mirror. The existing local mirror used
+to prepare this dataset is about 19 GB; actual size depends on Git server and
+Git version. The runner materializes only one case at a time and deletes that
+temporary tree after the run unless `--keep-workspaces` is used.
+
+## Prepare the Operator Manifest
+
+On a trusted machine that has the private dataset, or on the server after
+securely transferring the private ground truth, create the minimal manifest:
+
+```bash
+python3 scripts/create_runner_manifest.py \
+  --ground-truth /secure/evaluator/private/ground_truth.csv \
+  --output /secure/evaluator/runner_manifest.csv
+```
+
+Keep `/secure/evaluator/runner_manifest.csv` outside the cloned repository if
+possible. Transfer it to the server with the normal secure method. It contains
+148 `case_id,parent_hash` rows and no CVE, CWE, patch, or fixed-file columns.
+
+## Run One Case First
+
+Use one case to verify authentication, mirror access, skill discovery, and
+output capture:
+
+```bash
+python3 scripts/run_skill_batch.py \
+  --repo-mirror /srv/skill-vuldet-data/linux-stable.git \
+  --private-manifest /secure/evaluator/runner_manifest.csv \
+  --skill-cache /srv/skill-vuldet-data/skills/cva \
+  --output-root /srv/skill-vuldet-results \
+  --work-root /srv/skill-vuldet-work \
+  --case-id case_001
+```
+
+The default Claude tool allow-list is deliberately narrow:
+
+```text
+Read Grep Glob
+```
+
+This lets the skill read the target files and repository context without giving
+it Bash, Task, network, or file-writing tools. The runner also uses:
+
+```text
+--bare --print --permission-mode dontAsk \
+--output-format stream-json --no-session-persistence
+```
+
+`--bare` prevents user memory, `CLAUDE.md`, plugins, hooks, and normal settings
+from entering the run. `--no-session-persistence` prevents session storage.
+The skill itself is copied into the temporary repository under
+`.claude/skills/security-review`; this is the only non-kernel content added to
+the model workspace.
+
+## Run All 148 Cases
+
+After the one-case check succeeds, omit `--case-id`:
+
+```bash
+python3 scripts/run_skill_batch.py \
+  --repo-mirror /srv/skill-vuldet-data/linux-stable.git \
+  --private-manifest /secure/evaluator/runner_manifest.csv \
+  --skill-cache /srv/skill-vuldet-data/skills/cva \
+  --output-root /srv/skill-vuldet-results \
+  --work-root /srv/skill-vuldet-work
+```
+
+The runner reads target files automatically from `public/cases.csv`; no prompt
+needs to be edited for each CVE. It materializes, runs, records, and removes
+each case workspace sequentially. Existing cases with `run.json` are skipped,
+so a stopped batch can be resumed. Use `--rerun` to run them again.
+
+To run a small smoke test, use `--limit 3`. To preserve a source tree for
+manual inspection, use `--keep-workspaces`; do this sparingly because a Linux
+source tree is large.
+
+## Results
+
+For the `security-review` skill, each case is stored as:
+
+```text
+/srv/skill-vuldet-results/security-review/case_001/
+  prompt.txt           Exact generated prompt
+  trajectory.jsonl     Raw Claude stream, one JSON event per line
+  final.json            Extracted final result and last assistant event
+  run.json              Run status and reproducibility metadata
+  stderr.log            Claude CLI diagnostics
+  materialize.log       Parent-tree export diagnostics
+```
+
+Trajectories are saved for later analysis and are not fed into later model
+runs. The batch runner does not join results with private CVE/CWE labels. That
+join belongs in a separate evaluator process after all runs finish.
+
+The exact prompt is generated from the public target-file list and invokes the
+selected skill:
+
+```text
+/security-review
+
 Review all target files listed below for security vulnerabilities:
-<TARGET_FILES>
-
-Inspect these target files first. You may inspect the supplied repository for
-headers, callers, callees, types, macros, control flow, and data flow needed to
-understand them. Do not use the internet, Git history, CVE databases, patches,
-fixed files, private metadata, or anything outside the supplied repository and
-selected skill. Report whether a vulnerability is present, the CWE, affected
-functions, statements, and exact before-fix line numbers. Do not modify the
-repository.
+- <target file 1>
+- <target file 2>
+...
 ```
 
-The model should run in an isolated directory or container. A prompt is not a complete access-control boundary; the private manifest and artifact store must be unavailable at the filesystem level.
+The prompt permits repository-context inspection for types, macros, callers,
+callees, control flow, and data flow. It explicitly excludes internet access,
+Git history, patches, fixed files, CVE/CWE metadata, and private metadata.
 
-## Evaluation Workflow
+## Tool Policy
 
-```text
-private manifest + Git mirror
-            |
-            v
-operator runner materializes parent snapshot
-            |
-            v
-public target_files + clean repository
-            |
-            v
-selected skill produces report
-            |
-            v
-operator joins report with private ground truth
+The source skill declares additional tools, including Bash and Task. They are
+not enabled by default because this benchmark is intended to constrain the
+model to read-only repository inspection. If a separate experiment explicitly
+requires the skill's broader tool set, append this at the end of the command:
+
+```bash
+--tools Read Grep Glob Bash Task
 ```
 
-Recommended metrics:
+Only do this inside a read-only, network-isolated container or equivalent
+server boundary. A prompt is not an access-control mechanism by itself.
 
-1. Case detection: compare the reported vulnerability decision with the case-level label.
-2. CWE classification: compare the reported CWE with the NVD label set, allowing multi-label set matches.
-3. Patch localization: compare reported paths and before-fix lines with the private patch-line table.
-4. Function and statement localization: use manually reviewed semantic labels, not unverified patch hunk guesses.
+## Ground Truth and Scoring
 
-The model output should be stored using the opaque `case_id`, for example:
+The operator-side private package has separate layers:
 
-```text
-results/case_003/<skill-name>.json
-```
+- Case metadata: CVE/CWE labels, parent hash, fixing hash, and repository data.
+- Structural patch data: changed paths, hunks, before-fix deleted lines, and
+  after-fix added lines.
+- Function-context candidates: hunk-context suggestions that still require
+  verification.
+- Semantic ground truth: manually reviewed vulnerable files, functions,
+  statements, and root-cause lines.
 
-## Ground Truth Layers
+Not every changed file or changed line is necessarily the vulnerability's root
+cause. Use the semantic review queue before reporting strict function,
+statement, or root-cause-line metrics. The public runner must never receive
+these private tables.
 
-The private evaluator package should keep these separate:
+Recommended evaluation joins reports to private labels by opaque `case_id`:
 
-- **Case metadata:** case ID, CVE, CWE, parent hash, fixing hash, and repository information.
-- **Structural patch ground truth:** exact changed paths, hunk ranges, deleted before-fix lines, and added after-fix lines.
-- **Function-context candidates:** Git hunk-context suggestions that require verification.
-- **Semantic ground truth:** manually reviewed root-cause files, functions, statements, and sink lines.
-
-Not every changed line or changed file necessarily contains the vulnerability. Supporting headers, callers, API migrations, and cleanup must not automatically be treated as root-cause locations.
+1. Vulnerability detection: reported finding versus the case-level label.
+2. CWE classification: reported CWE versus the private CWE label set.
+3. File and line localization: report versus reviewed root-cause files and
+   before-fix lines.
+4. Function and statement localization: report versus manually reviewed
+   semantic annotations, not raw hunk context alone.
 
 ## Regenerating the Dataset
 
-The all-target-file generator operates in the operator environment, where the original collection and private manifest are available:
+Dataset generation remains an operator-only task. The public generator can be
+run where the original collection, artifacts, and private manifest are
+available:
 
 ```bash
 python3 scripts/prepare_all_target_files_eval_dataset.py \
@@ -176,8 +265,9 @@ python3 scripts/prepare_all_target_files_eval_dataset.py \
   --output /path/to/new/sample
 ```
 
-The generator creates the public manifest, structural patch tables, a function-context candidate table, and a semantic-review queue. The semantic queue must be manually reviewed before strict root-cause metrics are reported.
+It creates the public manifest, structural patch tables, function-context
+candidates, and semantic-review queue. Do not commit the private output to this
+public repository.
 
-## Annotation
-
-See [`docs/semantic_annotation_guide.md`](docs/semantic_annotation_guide.md) for the file-level root-cause review process. Semantic annotations remain private and must be frozen before model results are scored.
+See [`docs/semantic_annotation_guide.md`](docs/semantic_annotation_guide.md) for
+the manual semantic-labeling process.

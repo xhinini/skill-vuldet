@@ -56,7 +56,12 @@ def extract_archive(stream, destination: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, required=True, help="Local bare Linux Git mirror.")
-    parser.add_argument("--manifest", type=Path, required=True, help="Private ground_truth.csv for this sample.")
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        required=True,
+        help="Operator-only manifest with at least case_id,parent_hash.",
+    )
     parser.add_argument("--case-id", required=True)
     parser.add_argument("--output", type=Path, required=True, help="New directory for the clean source tree.")
     args = parser.parse_args()

@@ -5,6 +5,11 @@ private/
 artifacts/
 *.patch
 *.log
+.runtime/
+workspaces/
+server-data/
+__pycache__/
+.DS_Store
 
 # Local Git mirrors
 *.git/

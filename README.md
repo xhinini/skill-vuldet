@@ -36,8 +36,10 @@ location.
 
 ```text
 public/cases.csv                         Public 148-case manifest
-configs/security-review.json            First skill runner configuration
-scripts/setup_server.sh                 Server bootstrap script
+configs/security-review.json            Example skill configuration
+configs/security-review.prompt.txt      Example skill-specific prompt
+scripts/setup_server.sh                 Shared Linux-mirror setup
+scripts/install_skill.py                 Install one sparse skill checkout
 scripts/create_runner_manifest.py       Reduce private ground truth to 2 columns
 scripts/materialize_repository_case.py  Export one parent-commit source tree
 scripts/run_skill_batch.py              Run one or all cases and save trajectories
@@ -65,7 +67,7 @@ The server needs:
 - Git
 - Python 3.10 or newer
 - Claude Code installed and authenticated according to the server policy
-- Network access during setup, so Git can download the Linux mirror and skill
+- Network access during setup, so Git can download the Linux mirror and selected skills
 - A firewall, container, or network namespace that blocks model-run internet
   access if strict no-internet evaluation is required
 
@@ -80,31 +82,46 @@ git clone https://github.com/xhinini/skill-vuldet.git
 cd skill-vuldet
 ```
 
-Run the bootstrap script. The Linux mirror is a bare filtered mirror, not 148
-working-tree clones. It is downloaded from the configured Linux repository and
-provides the Git objects needed for parent-commit exports.
+Run the bootstrap script once. The Linux mirror is a bare filtered mirror, not
+148 working-tree clones. It is downloaded from the configured Linux repository
+and provides the Git objects needed for parent-commit exports.
 
 ```bash
 bash scripts/setup_server.sh \
-  --mirror /srv/skill-vuldet-data/linux-stable.git \
-  --skill-cache /srv/skill-vuldet-data/skills/cva
+  --mirror /srv/skill-vuldet-data/linux-stable.git
 ```
 
-The default sources are:
+The default Linux source is:
 
 ```text
-Linux: https://github.com/gregkh/linux.git
-Skill: https://github.com/joe-bell/cva.git
-Skill path: .agents/skills/security-review
+https://github.com/gregkh/linux.git
 ```
-
-The skill checkout includes `SKILL.md` and its supporting reference files. The
-runner records the checked-out skill revision in each `run.json` file.
 
 Plan for tens of gigabytes for the Linux mirror. The existing local mirror used
 to prepare this dataset is about 19 GB; actual size depends on Git server and
 Git version. The runner materializes only one case at a time and deletes that
 temporary tree after the run unless `--keep-workspaces` is used.
+
+## Install Skills
+
+Install each skill into its own checkout. The repository, Git ref, and path are
+skill-specific; use the full skill directory so its supporting reference files
+are available too.
+
+For the first skill:
+
+```bash
+python3 scripts/install_skill.py \
+  --repository https://github.com/joe-bell/cva.git \
+  --ref main \
+  --source-path .agents/skills/security-review \
+  --output /srv/skill-vuldet-data/skills/security-review-cva
+```
+
+For another skill, run the same installer with that skill's repository, ref,
+source path, and a different output directory. Pin `--ref` to a commit or tag
+when you need runs to be exactly reproducible. The installer records the
+resolved commit in the run metadata later.
 
 ## Prepare the Operator Manifest
 
@@ -130,13 +147,14 @@ output capture:
 python3 scripts/run_skill_batch.py \
   --repo-mirror /srv/skill-vuldet-data/linux-stable.git \
   --private-manifest /secure/evaluator/runner_manifest.csv \
-  --skill-cache /srv/skill-vuldet-data/skills/cva \
+  --skill-config configs/security-review.json \
+  --skill-cache /srv/skill-vuldet-data/skills/security-review-cva \
   --output-root /srv/skill-vuldet-results \
   --work-root /srv/skill-vuldet-work \
   --case-id case_001
 ```
 
-The default Claude tool allow-list is deliberately narrow:
+The example configuration's Claude tool allow-list is deliberately narrow:
 
 ```text
 Read Grep Glob
@@ -152,9 +170,9 @@ it Bash, Task, network, or file-writing tools. The runner also uses:
 
 `--bare` prevents user memory, `CLAUDE.md`, plugins, hooks, and normal settings
 from entering the run. `--no-session-persistence` prevents session storage.
-The skill itself is copied into the temporary repository under
-`.claude/skills/security-review`; this is the only non-kernel content added to
-the model workspace.
+The selected skill is copied into the temporary repository under
+`.claude/skills/<skill-name>`; this is the only non-kernel content added to the
+model workspace.
 
 ## Run All 148 Cases
 
@@ -164,7 +182,8 @@ After the one-case check succeeds, omit `--case-id`:
 python3 scripts/run_skill_batch.py \
   --repo-mirror /srv/skill-vuldet-data/linux-stable.git \
   --private-manifest /secure/evaluator/runner_manifest.csv \
-  --skill-cache /srv/skill-vuldet-data/skills/cva \
+  --skill-config configs/security-review.json \
+  --skill-cache /srv/skill-vuldet-data/skills/security-review-cva \
   --output-root /srv/skill-vuldet-results \
   --work-root /srv/skill-vuldet-work
 ```
@@ -178,12 +197,62 @@ To run a small smoke test, use `--limit 3`. To preserve a source tree for
 manual inspection, use `--keep-workspaces`; do this sparingly because a Linux
 source tree is large.
 
-## Results
+## Run Another Skill
 
-For the `security-review` skill, each case is stored as:
+The Linux mirror, public manifest, private runner manifest, and case-selection
+logic are shared across skills. Only the skill checkout, skill configuration,
+prompt template, tool allow-list, and result directory change.
+
+Create a JSON configuration for each additional skill, for example:
+
+```json
+{
+  "skill_name": "my-skill",
+  "skill_invocation": "/my-skill",
+  "skill_repository": "https://github.com/example/skills.git",
+  "skill_ref": "<pinned-commit-or-tag>",
+  "skill_source_path": ".agents/skills/my-skill",
+  "default_tools": ["Read", "Grep", "Glob"],
+  "prompt_template": "my-skill.prompt.txt"
+}
+```
+
+The prompt template is skill-specific and uses these placeholders:
 
 ```text
-/srv/skill-vuldet-results/security-review/case_001/
+{SKILL_INVOCATION}
+{TARGET_FILES}
+```
+
+Then install and run it:
+
+```bash
+python3 scripts/install_skill.py \
+  --repository https://github.com/example/skills.git \
+  --ref <pinned-commit-or-tag> \
+  --source-path .agents/skills/my-skill \
+  --output /srv/skill-vuldet-data/skills/my-skill
+
+python3 scripts/run_skill_batch.py \
+  --repo-mirror /srv/skill-vuldet-data/linux-stable.git \
+  --private-manifest /secure/evaluator/runner_manifest.csv \
+  --skill-config configs/my-skill.json \
+  --skill-cache /srv/skill-vuldet-data/skills/my-skill \
+  --output-root /srv/skill-vuldet-results \
+  --work-root /srv/skill-vuldet-work
+```
+
+Results are automatically separated under
+`/srv/skill-vuldet-results/my-skill/`. Run each skill independently over the
+same 148 cases; trajectories from one skill are saved for analysis and are
+never fed into another skill's run.
+
+## Results
+
+Each skill stores one directory per case:
+
+```text
+/srv/skill-vuldet-results/<skill-name>/case_001/
   prompt.txt           Exact generated prompt
   trajectory.jsonl     Raw Claude stream, one JSON event per line
   final.json            Extracted final result and last assistant event
@@ -196,8 +265,8 @@ Trajectories are saved for later analysis and are not fed into later model
 runs. The batch runner does not join results with private CVE/CWE labels. That
 join belongs in a separate evaluator process after all runs finish.
 
-The exact prompt is generated from the public target-file list and invokes the
-selected skill:
+The exact prompt is generated from the public target-file list and the
+skill-specific prompt template. The security-review example is:
 
 ```text
 /security-review
@@ -214,10 +283,10 @@ Git history, patches, fixed files, CVE/CWE metadata, and private metadata.
 
 ## Tool Policy
 
-The source skill declares additional tools, including Bash and Task. They are
-not enabled by default because this benchmark is intended to constrain the
-model to read-only repository inspection. If a separate experiment explicitly
-requires the skill's broader tool set, append this at the end of the command:
+Each skill configuration declares its own tool allow-list. Keep the default
+read-only set unless the experiment explicitly requires broader capabilities.
+For the security-review skill, the source declaration includes Bash and Task;
+to enable them, use:
 
 ```bash
 --tools Read Grep Glob Bash Task

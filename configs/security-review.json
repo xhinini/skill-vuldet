@@ -5,6 +5,7 @@
   "skill_ref": "main",
   "skill_source_path": ".agents/skills/security-review",
   "default_tools": ["Read", "Grep", "Glob"],
+  "prompt_template": "security-review.prompt.txt",
   "output_format": "stream-json",
   "no_session_persistence": true
 }

@@ -75,33 +75,22 @@ def ensure_skill_cache(
     if (skill_path / "SKILL.md").is_file():
         return skill_path
 
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    if cache.exists():
-        raise SystemExit(
-            f"skill cache exists but is missing {source_path}/SKILL.md: {cache}"
-        )
-
+    installer = Path(__file__).with_name("install_skill.py")
     subprocess.run(
         [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            "--filter=blob:none",
-            "--sparse",
-            "--branch",
-            ref,
+            sys.executable,
+            str(installer),
+            "--repository",
             repository,
+            "--ref",
+            ref,
+            "--source-path",
+            source_path,
+            "--output",
             str(cache),
         ],
         check=True,
     )
-    subprocess.run(
-        ["git", "-C", str(cache), "sparse-checkout", "set", source_path],
-        check=True,
-    )
-    if not (skill_path / "SKILL.md").is_file():
-        raise SystemExit(f"skill checkout did not contain {source_path}/SKILL.md")
     return skill_path
 
 
@@ -118,11 +107,19 @@ def git_revision(path: Path) -> str | None:
     return result.stdout.strip()
 
 
-def build_prompt(invocation: str, files: list[str]) -> str:
+def build_prompt(
+    invocation: str,
+    files: list[str],
+    template: str | None,
+) -> str:
     listed = "\n".join(f"- {path}" for path in files)
+    if template is not None:
+        return template.replace("{SKILL_INVOCATION}", invocation).replace(
+            "{TARGET_FILES}", listed
+        )
     return f"""{invocation}
 
-Review all target files listed below for security vulnerabilities:
+Review all target files listed below according to the selected skill:
 
 {listed}
 
@@ -134,11 +131,29 @@ Do not use the internet, external files, Git history, CVE databases, patches,
 fixed files, private metadata, or anything outside the supplied repository and
 the selected skill. Do not modify files.
 
-Use the selected skill's normal output format. Report only high-confidence
-findings and include the affected file, function, line number, vulnerability
-type, impact, evidence, confidence, and suggested remediation. If the skill's
-normal format supports an explicit no-finding response, use it when appropriate.
+Follow the selected skill's normal output format. Do not modify files.
 """
+
+
+def load_skill_config(path: Path | None) -> tuple[dict[str, Any], str | None]:
+    if path is None:
+        return {}, None
+    with path.open(encoding="utf-8") as handle:
+        config = json.load(handle)
+    if not isinstance(config, dict):
+        raise SystemExit(f"skill config must contain a JSON object: {path}")
+    prompt_template = config.get("prompt_template")
+    if prompt_template is None:
+        return config, None
+    if not isinstance(prompt_template, str):
+        raise SystemExit(f"prompt_template must be a string: {path}")
+    template_path = Path(prompt_template)
+    if not template_path.is_absolute():
+        template_path = path.parent / template_path
+    try:
+        return config, template_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise SystemExit(f"cannot read prompt template {template_path}: {exc}") from exc
 
 
 def extract_final_events(path: Path) -> dict[str, Any]:
@@ -193,6 +208,7 @@ def run_case(
     private_row: dict[str, str],
     skill_source: Path,
     skill_revision: str | None,
+    prompt_template: str | None,
     output_root: Path,
     work_root: Path,
 ) -> str:
@@ -209,7 +225,7 @@ def run_case(
         print(f"skip {case_id}: {run_metadata_path} already exists")
         return "skipped"
 
-    prompt = build_prompt(args.skill_invocation, files)
+    prompt = build_prompt(args.skill_invocation, files, prompt_template)
     (case_output / "prompt.txt").write_text(prompt, encoding="utf-8")
     trajectory_path = case_output / "trajectory.jsonl"
     stderr_path = case_output / "stderr.log"
@@ -383,21 +399,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model")
     parser.add_argument("--max-budget-usd", type=float)
     parser.add_argument("--permission-mode", default="dontAsk")
-    parser.add_argument("--skill-name", default=DEFAULT_SKILL_NAME)
-    parser.add_argument("--skill-invocation", default=DEFAULT_SKILL_INVOCATION)
-    parser.add_argument("--skill-repository", default=DEFAULT_SKILL_REPOSITORY)
-    parser.add_argument("--skill-ref", default=DEFAULT_SKILL_REF)
-    parser.add_argument("--skill-source-path", default=DEFAULT_SKILL_SOURCE_PATH)
+    parser.add_argument("--skill-config", type=Path, help="JSON config for one skill experiment.")
+    parser.add_argument("--skill-name")
+    parser.add_argument("--skill-invocation")
+    parser.add_argument("--skill-repository")
+    parser.add_argument("--skill-ref")
+    parser.add_argument("--skill-source-path")
+    parser.add_argument("--prompt-template", type=Path)
     parser.add_argument(
         "--skill-cache",
         type=Path,
-        default=Path(".runtime/skill-cache/cva"),
+        default=None,
         help="Sparse checkout containing the selected skill.",
     )
     parser.add_argument(
         "--tools",
         nargs="+",
-        default=DEFAULT_TOOLS,
+        default=None,
         help="Allowed Claude tools. Default is Read Grep Glob.",
     )
     return parser.parse_args()
@@ -405,6 +423,36 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    skill_config, config_template = load_skill_config(args.skill_config)
+    args.skill_name = args.skill_name or skill_config.get("skill_name") or DEFAULT_SKILL_NAME
+    args.skill_invocation = (
+        args.skill_invocation
+        or skill_config.get("skill_invocation")
+        or DEFAULT_SKILL_INVOCATION
+    )
+    args.skill_repository = (
+        args.skill_repository
+        or skill_config.get("skill_repository")
+        or DEFAULT_SKILL_REPOSITORY
+    )
+    args.skill_ref = args.skill_ref or skill_config.get("skill_ref") or DEFAULT_SKILL_REF
+    args.skill_source_path = (
+        args.skill_source_path
+        or skill_config.get("skill_source_path")
+        or DEFAULT_SKILL_SOURCE_PATH
+    )
+    args.tools = args.tools or skill_config.get("default_tools") or DEFAULT_TOOLS
+    if not isinstance(args.tools, list) or not all(isinstance(tool, str) for tool in args.tools):
+        raise SystemExit("skill tools must be a list of strings")
+    if args.prompt_template is not None:
+        try:
+            prompt_template = args.prompt_template.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise SystemExit(f"cannot read prompt template {args.prompt_template}: {exc}") from exc
+    else:
+        prompt_template = config_template
+    if args.skill_cache is None:
+        args.skill_cache = Path(".runtime/skill-cache") / args.skill_name
     if not CASE_ID_RE.fullmatch(args.skill_name):
         raise SystemExit(f"unsafe skill name: {args.skill_name}")
     if args.limit is not None and args.limit < 1:
@@ -458,6 +506,7 @@ def main() -> int:
             private_row=private_index[case_id],
             skill_source=skill_source,
             skill_revision=skill_revision,
+            prompt_template=prompt_template,
             output_root=args.output_root,
             work_root=args.work_root,
         )

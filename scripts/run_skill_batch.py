@@ -113,11 +113,15 @@ def build_prompt(
     template: str | None,
 ) -> str:
     listed = "\n".join(f"- {path}" for path in files)
+    focus_args = " ".join(f"--focus {path}" for path in files)
+    rendered_invocation = invocation.replace("{TARGET_FOCUS_ARGS}", focus_args)
     if template is not None:
-        return template.replace("{SKILL_INVOCATION}", invocation).replace(
-            "{TARGET_FILES}", listed
+        return (
+            template.replace("{SKILL_INVOCATION}", rendered_invocation)
+            .replace("{TARGET_FILES}", listed)
+            .replace("{TARGET_FOCUS_ARGS}", focus_args)
         )
-    return f"""{invocation}
+    return f"""{rendered_invocation}
 
 Review all target files listed below according to the selected skill:
 
@@ -201,6 +205,30 @@ def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def collect_skill_artifacts(
+    repository_root: Path,
+    case_output: Path,
+    artifact_names: list[str],
+) -> tuple[list[str], list[str]]:
+    copied: list[str] = []
+    errors: list[str] = []
+    artifact_root = case_output / "skill_artifacts"
+    for raw_name in artifact_names:
+        relative = Path(raw_name)
+        if relative.is_absolute() or ".." in relative.parts:
+            errors.append(f"unsafe configured artifact path: {raw_name}")
+            continue
+        source = repository_root / relative
+        if not source.is_file():
+            errors.append(f"artifact was not produced: {raw_name}")
+            continue
+        destination = artifact_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        copied.append(raw_name)
+    return copied, errors
+
+
 def run_case(
     *,
     args: argparse.Namespace,
@@ -209,6 +237,7 @@ def run_case(
     skill_source: Path,
     skill_revision: str | None,
     prompt_template: str | None,
+    skill_artifacts: list[str],
     output_root: Path,
     work_root: Path,
 ) -> str:
@@ -258,6 +287,8 @@ def run_case(
     return_code: int | None = None
     error_message: str | None = None
     timed_out = False
+    copied_artifacts: list[str] = []
+    artifact_errors: list[str] = []
     try:
         materializer = Path(__file__).with_name("materialize_repository_case.py")
         materialize = subprocess.run(
@@ -332,6 +363,15 @@ def run_case(
             },
         )
     finally:
+        if repository_root.exists():
+            try:
+                copied_artifacts, artifact_errors = collect_skill_artifacts(
+                    repository_root,
+                    case_output,
+                    skill_artifacts,
+                )
+            except Exception as exc:
+                artifact_errors.append(str(exc))
         if not args.keep_workspaces:
             shutil.rmtree(workspace, ignore_errors=True)
 
@@ -351,6 +391,8 @@ def run_case(
         "tool_allowlist": args.tools,
         "permission_mode": args.permission_mode,
         "workspace_deleted": not args.keep_workspaces,
+        "skill_artifact_files": copied_artifacts,
+        "skill_artifact_errors": artifact_errors,
         "trajectory_file": str(trajectory_path.name),
         "final_file": str(final_path.name),
     }
@@ -451,6 +493,12 @@ def main() -> int:
             raise SystemExit(f"cannot read prompt template {args.prompt_template}: {exc}") from exc
     else:
         prompt_template = config_template
+    configured_artifacts = skill_config.get("output_files", [])
+    if not isinstance(configured_artifacts, list) or not all(
+        isinstance(item, str) for item in configured_artifacts
+    ):
+        raise SystemExit("output_files must be a list of strings")
+    args.skill_artifacts = configured_artifacts
     if args.skill_cache is None:
         args.skill_cache = Path(".runtime/skill-cache") / args.skill_name
     if not CASE_ID_RE.fullmatch(args.skill_name):
@@ -507,6 +555,7 @@ def main() -> int:
             skill_source=skill_source,
             skill_revision=skill_revision,
             prompt_template=prompt_template,
+            skill_artifacts=args.skill_artifacts,
             output_root=args.output_root,
             work_root=args.work_root,
         )

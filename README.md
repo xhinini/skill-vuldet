@@ -38,6 +38,8 @@ location.
 public/cases.csv                         Public 148-case manifest
 configs/security-review.json            Example skill configuration
 configs/security-review.prompt.txt      Example skill-specific prompt
+configs/vuln-scan.json                   vuln-scan configuration
+configs/vuln-scan.prompt.txt             vuln-scan prompt template
 scripts/setup_server.sh                 Shared Linux-mirror setup
 scripts/install_skill.py                 Install one sparse skill checkout
 scripts/create_runner_manifest.py       Reduce private ground truth to 2 columns
@@ -222,6 +224,7 @@ The prompt template is skill-specific and uses these placeholders:
 ```text
 {SKILL_INVOCATION}
 {TARGET_FILES}
+{TARGET_FOCUS_ARGS}
 ```
 
 Then install and run it:
@@ -246,6 +249,51 @@ Results are automatically separated under
 `/srv/skill-vuldet-results/my-skill/`. Run each skill independently over the
 same 148 cases; trajectories from one skill are saved for analysis and are
 never fed into another skill's run.
+
+## Run `vuln-scan`
+
+The Anthropic `vuln-scan` skill is directory-oriented. Its configuration passes
+the materialized repository root (`.`) as the target directory and automatically
+adds one `--focus <target-file>` argument for every file in the public manifest.
+This skips broad repository reconnaissance while still allowing the skill to
+read repository context for the selected files. The native skill also creates
+`VULN-FINDINGS.json` and `VULN-FINDINGS.md`; the runner copies those files into
+the per-case results directory before deleting the temporary workspace.
+
+Install the skill:
+
+```bash
+python3 scripts/install_skill.py \
+  --repository https://github.com/anthropics/defending-code-reference-harness.git \
+  --ref d3bea6b5793b5f3d59a75ebe69a58efa88383145 \
+  --source-path .claude/skills/vuln-scan \
+  --output /srv/skill-vuldet-data/skills/vuln-scan
+```
+
+Run it over one case first:
+
+```bash
+python3 scripts/run_skill_batch.py \
+  --repo-mirror /srv/skill-vuldet-data/linux-stable.git \
+  --private-manifest /secure/evaluator/runner_manifest.csv \
+  --skill-config configs/vuln-scan.json \
+  --skill-cache /srv/skill-vuldet-data/skills/vuln-scan \
+  --output-root /srv/skill-vuldet-results \
+  --work-root /srv/skill-vuldet-work \
+  --case-id case_001
+```
+
+The default allow-list for this configuration is `Read`, `Glob`, `Grep`,
+`Write`, and `Task`. `Write` is present only because this skill requires its
+two result files. The prompt forbids source edits and the result files are
+copied out and then discarded with the temporary workspace. For a stronger
+boundary, run the case inside a container or filesystem policy that allows
+writes only to those two output paths and blocks network access.
+
+This skill reports vulnerability categories such as `use-after-free` and
+`heap-buffer-overflow`; those are not automatically equivalent to a CWE ID.
+Use a separate evaluator mapping or add a carefully versioned post-processing
+step before comparing its output with the dataset's CWE labels.
 
 ## Results
 

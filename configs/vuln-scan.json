@@ -1,0 +1,12 @@
+{
+  "skill_name": "vuln-scan",
+  "skill_invocation": "/vuln-scan . {TARGET_FOCUS_ARGS}",
+  "skill_repository": "https://github.com/anthropics/defending-code-reference-harness.git",
+  "skill_ref": "d3bea6b5793b5f3d59a75ebe69a58efa88383145",
+  "skill_source_path": ".claude/skills/vuln-scan",
+  "default_tools": ["Read", "Glob", "Grep", "Write", "Task"],
+  "prompt_template": "vuln-scan.prompt.txt",
+  "output_format": "stream-json",
+  "no_session_persistence": true,
+  "output_files": ["VULN-FINDINGS.json", "VULN-FINDINGS.md"]
+}

@@ -7,5 +7,6 @@
   "default_tools": ["Read", "Grep", "Glob"],
   "prompt_template": "security-review.prompt.txt",
   "output_format": "stream-json",
-  "no_session_persistence": true
+  "no_session_persistence": true,
+  "output_files": []
 }

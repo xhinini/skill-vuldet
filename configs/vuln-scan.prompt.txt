@@ -1,0 +1,26 @@
+{SKILL_INVOCATION}
+
+Use the supplied repository root (`.`) as the target directory. The exact
+target files for this case are:
+
+{TARGET_FILES}
+
+The `--focus` arguments on the skill invocation identify these target files.
+Start your review from those files. You may inspect other files in the supplied
+repository only when needed to understand types, macros, callers, callees,
+control flow, and data flow for the target files.
+
+Do not use the internet, external files, Git history, CVE databases, patches,
+fixed files, private metadata, or anything outside the supplied repository and
+the selected skill. Do not build or execute the source code. Do not follow
+symlinks or paths outside the supplied repository.
+
+Follow the vuln-scan skill's native review process and output schema. It must
+write only these two result files at the repository root:
+
+- VULN-FINDINGS.json
+- VULN-FINDINGS.md
+
+Do not modify Linux source files or create any other files. Keep the skill's
+candidate-finding behavior and confidence fields; do not replace its native
+finding format with a generic report.

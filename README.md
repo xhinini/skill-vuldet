@@ -40,6 +40,8 @@ configs/security-review.json            Example skill configuration
 configs/security-review.prompt.txt      Example skill-specific prompt
 configs/vuln-scan.json                   vuln-scan configuration
 configs/vuln-scan.prompt.txt             vuln-scan prompt template
+configs/gsd-security-review.json        GSD security-review configuration
+configs/gsd-security-review.prompt.txt  GSD skill-specific prompt template
 scripts/setup_server.sh                 Shared Linux-mirror setup
 scripts/install_skill.py                 Install one sparse skill checkout
 scripts/create_runner_manifest.py       Reduce private ground truth to 2 columns
@@ -328,6 +330,44 @@ Review all target files listed below for security vulnerabilities:
 The prompt permits repository-context inspection for types, macros, callers,
 callees, control flow, and data flow. It explicitly excludes internet access,
 Git history, patches, fixed files, CVE/CWE metadata, and private metadata.
+
+## Run GSD `security-review`
+
+The GSD skill is a Markdown-report skill. It uses the native STRIDE-oriented
+report structure rather than the `vuln-scan` JSON/Markdown artifact pair. The
+configuration keeps the installed skill directory named `security-review` so
+the `/security-review` invocation resolves correctly, while using the distinct
+result name `gsd-security-review` to keep its runs separate from the other
+security-review skill.
+
+Install the pinned GSD skill checkout:
+
+```bash
+python3 scripts/install_skill.py \
+  --repository https://github.com/gsd-build/gsd-2.git \
+  --ref 33c00aaffa56e5d394bccce1c8df59fb842e84c5 \
+  --source-path src/resources/skills/security-review \
+  --output /srv/skill-vuldet-data/skills/gsd-security-review
+```
+
+Run one case:
+
+```bash
+python3 scripts/run_skill_batch.py \
+  --repo-mirror /srv/skill-vuldet-data/linux-stable.git \
+  --private-manifest /secure/evaluator/runner_manifest.csv \
+  --skill-config configs/gsd-security-review.json \
+  --skill-cache /srv/skill-vuldet-data/skills/gsd-security-review \
+  --output-root /srv/skill-vuldet-results \
+  --work-root /srv/skill-vuldet-work \
+  --case-id case_001
+```
+
+The configuration enables `Read`, `Grep`, `Glob`, and `Task` so the skill can
+read repository context and use its suggested Explore-style subagent pass. It
+does not enable Bash, Write, network tools, or outward-action tools. The prompt
+preserves the skill's native STRIDE report while requesting optional CWE,
+affected-function, and vulnerable-line fields for benchmark extraction.
 
 ## Tool Policy
 

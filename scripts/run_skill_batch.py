@@ -24,6 +24,7 @@ DEFAULT_SKILL_INVOCATION = "/security-review"
 DEFAULT_SKILL_REPOSITORY = "https://github.com/joe-bell/cva.git"
 DEFAULT_SKILL_REF = "main"
 DEFAULT_SKILL_SOURCE_PATH = ".agents/skills/security-review"
+DEFAULT_SKILL_DIRECTORY = DEFAULT_SKILL_NAME
 DEFAULT_TOOLS = ["Read", "Grep", "Glob"]
 CASE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -316,7 +317,7 @@ def run_case(
                 f"materialization failed with exit code {materialize.returncode}"
             )
 
-        skill_destination = repository_root / ".claude" / "skills" / args.skill_name
+        skill_destination = repository_root / ".claude" / "skills" / args.skill_directory
         skill_destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(skill_source, skill_destination)
 
@@ -378,6 +379,7 @@ def run_case(
     metadata = {
         "case_id": case_id,
         "skill_name": args.skill_name,
+        "skill_directory": args.skill_directory,
         "target_files": files,
         "started_at": started_at,
         "finished_at": utc_now(),
@@ -443,6 +445,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--permission-mode", default="dontAsk")
     parser.add_argument("--skill-config", type=Path, help="JSON config for one skill experiment.")
     parser.add_argument("--skill-name")
+    parser.add_argument("--skill-directory")
     parser.add_argument("--skill-invocation")
     parser.add_argument("--skill-repository")
     parser.add_argument("--skill-ref")
@@ -483,6 +486,11 @@ def main() -> int:
         or skill_config.get("skill_source_path")
         or DEFAULT_SKILL_SOURCE_PATH
     )
+    args.skill_directory = (
+        args.skill_directory
+        or skill_config.get("skill_directory")
+        or DEFAULT_SKILL_DIRECTORY
+    )
     args.tools = args.tools or skill_config.get("default_tools") or DEFAULT_TOOLS
     if not isinstance(args.tools, list) or not all(isinstance(tool, str) for tool in args.tools):
         raise SystemExit("skill tools must be a list of strings")
@@ -503,6 +511,8 @@ def main() -> int:
         args.skill_cache = Path(".runtime/skill-cache") / args.skill_name
     if not CASE_ID_RE.fullmatch(args.skill_name):
         raise SystemExit(f"unsafe skill name: {args.skill_name}")
+    if not CASE_ID_RE.fullmatch(args.skill_directory):
+        raise SystemExit(f"unsafe skill directory: {args.skill_directory}")
     if args.limit is not None and args.limit < 1:
         raise SystemExit("--limit must be positive")
     if args.timeout_seconds < 1:

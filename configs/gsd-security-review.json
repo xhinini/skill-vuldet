@@ -1,0 +1,13 @@
+{
+  "skill_name": "gsd-security-review",
+  "skill_directory": "security-review",
+  "skill_invocation": "/security-review",
+  "skill_repository": "https://github.com/gsd-build/gsd-2.git",
+  "skill_ref": "33c00aaffa56e5d394bccce1c8df59fb842e84c5",
+  "skill_source_path": "src/resources/skills/security-review",
+  "default_tools": ["Read", "Grep", "Glob", "Task"],
+  "prompt_template": "gsd-security-review.prompt.txt",
+  "output_format": "stream-json",
+  "no_session_persistence": true,
+  "output_files": []
+}

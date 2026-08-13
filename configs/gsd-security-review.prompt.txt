@@ -1,0 +1,51 @@
+{SKILL_INVOCATION}
+
+Perform a read-only security review of the following target files in the
+supplied repository:
+
+{TARGET_FILES}
+
+The listed files are the primary review scope. The complete supplied repository
+is available only for context. You may inspect other repository files when
+needed to trace types, macros, callers, callees, entry points, control flow,
+data flow, and reachability. Do not report unrelated issues outside the target
+scope unless a context file is necessary to establish the exploit path.
+
+The scope is explicit; do not ask clarifying questions. Start with the listed
+target files and read the actual code before applying security checklists.
+Identify real untrusted-input entry points and trace them to the relevant sink
+or security-sensitive operation. Apply the skill's STRIDE process and its
+OWASP cross-check where applicable. For Linux kernel C code, consider user,
+network, device, filesystem, ioctl, syscall, netlink, and IPC input only when
+the supplied code establishes that path.
+
+Do not use the internet, external files, Git history, commit metadata, CVE or
+CWE databases, patches, fixed files, private metadata, or anything outside the
+supplied repository and selected skill. Do not build, execute, fuzz, or run
+the source code. Do not follow symlinks or paths outside the supplied
+repository. Do not modify source files or create files. Do not file issues,
+write GSD artifacts, append to decision logs, or take any outward action.
+
+Follow the selected skill's native Markdown report structure:
+
+- `## Security Review — <scope>`
+- `### Summary`
+- `### Findings`
+- `### Non-findings considered`
+- `### Out of scope`
+
+Every finding must cite an exact file and line from the supplied source, name a
+concrete exploit scenario, state reachability, severity, business impact, and
+specific remediation. Do not report hypothetical or checklist-only concerns.
+State when the evidence is insufficient for a finding.
+
+For benchmark extraction, add these lines inside each finding when the code
+supports them:
+
+- `**CWE:** CWE-<number>`; use `not confidently determined` instead of guessing.
+- `**Affected function(s):**` the function names containing the issue.
+- `**Vulnerable line(s):**` the exact line numbers in the supplied snapshot.
+
+If no security vulnerability is supported by a concrete code path, still
+provide the native report with a concise summary, the non-findings considered,
+and the out-of-scope boundary.

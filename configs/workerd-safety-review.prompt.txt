@@ -1,0 +1,73 @@
+{SKILL_INVOCATION}
+
+Perform a read-only safety and security review of the following target files in
+the supplied repository:
+
+{TARGET_FILES}
+
+The listed files are the primary review scope. Start with those files. The
+complete supplied repository is available only for context. You may inspect
+other repository files when needed to understand types, macros, callers,
+callees, entry points, control flow, data flow, ownership, synchronization,
+and reachability. Do not report unrelated issues outside the target scope
+unless a context file is needed to establish the exploit path.
+
+Before reviewing code, read the selected skill's bundled checklist at:
+
+docs/reference/cpp-safety-review-checklist.md
+
+This benchmark applies a workerd C++ safety skill to Linux kernel source. Use
+the checklist's general memory-safety, lifetime, thread-safety, and concurrency
+principles where they match the actual code. Apply workerd-, V8-, KJ-, or
+Cap'n-Proto-specific patterns only when the supplied source actually contains
+the corresponding construct. Do not invent workerd-specific findings from the
+absence of those APIs, and do not treat ordinary Linux-kernel C patterns as
+workerd code.
+
+The scope is explicit; do not ask clarifying questions. Read actual source
+before applying patterns. Trace a concrete untrusted-input or unsafe concurrent
+path to the relevant memory, lifetime, synchronization, concurrency, or other
+security-sensitive operation. Consider user, network, device, filesystem,
+ioctl, syscall, netlink, and IPC input only when the supplied code establishes
+that path.
+
+Do not use the internet, external files, Git history, commit metadata, CVE or
+CWE databases, patches, fixed files, private metadata, or anything outside the
+supplied repository and the selected skill plus its bundled checklist. Do not
+build, execute, fuzz, or run the source code. Do not follow symlinks or paths
+outside the supplied repository. Do not modify source files or create files.
+Do not file issues, write reports to disk, or take any outward action.
+
+Report only high-confidence security findings supported by a concrete code
+path. Use this Markdown structure:
+
+## Safety Review - <scope>
+### Summary
+### Findings
+### Non-findings considered
+### Out of scope
+
+For every finding, include:
+
+- A unique finding ID and title.
+- `**Severity:**` Critical, High, Medium, Low, or Informational.
+- `**Category:**` memory safety, lifetime/ownership, thread safety,
+  concurrency, boundary safety, resource exhaustion, or another justified
+  category.
+- `**CWE:**` a CWE number only when it can be inferred confidently from the
+  code; otherwise write `not confidently determined`.
+- `**Location:**` exact repository-relative file path and line number.
+- `**Affected function(s):**` the relevant function names.
+- `**Vulnerable line(s):**` exact line numbers in the supplied snapshot.
+- `**Exploit:**` a concrete attacker-controlled or unsafe concurrent sequence.
+- `**Reachability:**` how the path can be reached and any required conditions.
+- `**Impact:**` the security consequence.
+- `**Evidence:**` the specific code behavior that establishes the finding.
+- `**Remediation:**` a specific corrective action.
+- `**Confidence:**` High only for findings reported in this benchmark.
+
+Do not report style issues, mere hardening opportunities, unchecked patterns
+without a demonstrated impact, or hypothetical concerns. If no vulnerability
+is supported by a concrete code path, still provide the report structure with
+a concise summary, the important non-findings considered, and the out-of-scope
+boundary.

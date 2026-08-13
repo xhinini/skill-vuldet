@@ -42,6 +42,8 @@ configs/vuln-scan.json                   vuln-scan configuration
 configs/vuln-scan.prompt.txt             vuln-scan prompt template
 configs/gsd-security-review.json        GSD security-review configuration
 configs/gsd-security-review.prompt.txt  GSD skill-specific prompt template
+configs/workerd-safety-review.json      workerd safety-review configuration
+configs/workerd-safety-review.prompt.txt workerd skill-specific prompt template
 scripts/setup_server.sh                 Shared Linux-mirror setup
 scripts/install_skill.py                 Install one sparse skill checkout
 scripts/create_runner_manifest.py       Reduce private ground truth to 2 columns
@@ -109,8 +111,9 @@ temporary tree after the run unless `--keep-workspaces` is used.
 ## Install Skills
 
 Install each skill into its own checkout. The repository, Git ref, and path are
-skill-specific; use the full skill directory so its supporting reference files
-are available too.
+skill-specific. A configuration can also declare `skill_support_files`; these
+are fetched into the sparse skill checkout and copied into each temporary case
+workspace as selected-skill reference material.
 
 For the first skill:
 
@@ -175,8 +178,9 @@ it Bash, Task, network, or file-writing tools. The runner also uses:
 `--bare` prevents user memory, `CLAUDE.md`, plugins, hooks, and normal settings
 from entering the run. `--no-session-persistence` prevents session storage.
 The selected skill is copied into the temporary repository under
-`.claude/skills/<skill-name>`; this is the only non-kernel content added to the
-model workspace.
+`.claude/skills/<skill-name>`. Any explicitly configured
+`skill_support_files` are also copied as read-only selected-skill reference
+material.
 
 ## Run All 148 Cases
 
@@ -216,6 +220,7 @@ Create a JSON configuration for each additional skill, for example:
   "skill_repository": "https://github.com/example/skills.git",
   "skill_ref": "<pinned-commit-or-tag>",
   "skill_source_path": ".agents/skills/my-skill",
+  "skill_support_files": [],
   "default_tools": ["Read", "Grep", "Glob"],
   "prompt_template": "my-skill.prompt.txt"
 }
@@ -368,6 +373,35 @@ read repository context and use its suggested Explore-style subagent pass. It
 does not enable Bash, Write, network tools, or outward-action tools. The prompt
 preserves the skill's native STRIDE report while requesting optional CWE,
 affected-function, and vulnerable-line fields for benchmark extraction.
+
+## Run `workerd-safety-review`
+
+The Cloudflare `workerd-safety-review` skill provides memory-safety,
+lifetime, thread-safety, and concurrency guidance. Its original instructions
+also require the workerd C++ checklist, so the configuration pins and includes
+that checklist as selected-skill support material. The prompt adapts the
+generic parts of the skill to the Linux-kernel source and tells the model not
+to invent V8/KJ/workerd findings when those APIs are absent.
+
+Run one case first. The runner automatically installs the skill and its
+checklist when the configured skill cache is new:
+
+```bash
+python3 scripts/run_skill_batch.py \
+  --repo-mirror /srv/skill-vuldet-data/linux-stable.git \
+  --private-manifest /secure/evaluator/runner_manifest.csv \
+  --skill-config configs/workerd-safety-review.json \
+  --skill-cache /srv/skill-vuldet-data/skills/workerd-safety-review \
+  --output-root /srv/skill-vuldet-results \
+  --work-root /srv/skill-vuldet-work \
+  --case-id case_001
+```
+
+The same command without `--case-id` runs all cases. Results are stored under
+`/srv/skill-vuldet-results/workerd-safety-review/`. The model receives the
+target files from `public/cases.csv`, the parent repository snapshot, the
+installed skill, and the bundled checklist; it does not receive CVE labels,
+patches, fixed files, or private metadata.
 
 ## Tool Policy
 

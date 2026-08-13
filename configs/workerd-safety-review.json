@@ -1,0 +1,16 @@
+{
+  "skill_name": "workerd-safety-review",
+  "skill_directory": "workerd-safety-review",
+  "skill_invocation": "/workerd-safety-review",
+  "skill_repository": "https://github.com/cloudflare/workerd.git",
+  "skill_ref": "c1e6d66a0c0ae11f513f4f01fb85e36b9711fdcf",
+  "skill_source_path": ".opencode/skills/workerd-safety-review",
+  "skill_support_files": [
+    "docs/reference/cpp-safety-review-checklist.md"
+  ],
+  "default_tools": ["Read", "Grep", "Glob"],
+  "prompt_template": "workerd-safety-review.prompt.txt",
+  "output_format": "stream-json",
+  "no_session_persistence": true,
+  "output_files": []
+}

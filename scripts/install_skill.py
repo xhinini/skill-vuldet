@@ -29,6 +29,12 @@ def main() -> int:
         help="Repository-relative directory containing SKILL.md.",
     )
     parser.add_argument(
+        "--include-path",
+        action="append",
+        default=[],
+        help="Additional repository-relative file or directory to include in the sparse checkout.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         required=True,
@@ -36,6 +42,11 @@ def main() -> int:
     )
     args = parser.parse_args()
     source_path = validate_source_path(args.source_path)
+    include_paths = []
+    for raw_path in args.include_path:
+        include_path = validate_source_path(raw_path)
+        if include_path not in include_paths and include_path != source_path:
+            include_paths.append(include_path)
     skill_file = args.output / source_path / "SKILL.md"
 
     if skill_file.is_file():
@@ -69,10 +80,29 @@ def main() -> int:
     run(["git", "-C", str(args.output), "fetch", "--depth", "1", "origin", args.ref])
     run(["git", "-C", str(args.output), "checkout", "--detach", "FETCH_HEAD"])
     run(["git", "-C", str(args.output), "sparse-checkout", "init", "--no-cone"])
-    run(["git", "-C", str(args.output), "sparse-checkout", "set", "--no-cone", source_path])
+    run(
+        [
+            "git",
+            "-C",
+            str(args.output),
+            "sparse-checkout",
+            "set",
+            "--no-cone",
+            source_path,
+            *include_paths,
+        ]
+    )
 
     if not skill_file.is_file():
         raise SystemExit(f"installed checkout does not contain {source_path}/SKILL.md")
+    missing_paths = [
+        path for path in include_paths if not (args.output / path).exists()
+    ]
+    if missing_paths:
+        raise SystemExit(
+            "installed checkout does not contain requested include paths: "
+            + ", ".join(missing_paths)
+        )
     revision = subprocess.run(
         ["git", "-C", str(args.output), "rev-parse", "HEAD"],
         check=True,

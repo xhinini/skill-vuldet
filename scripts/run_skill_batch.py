@@ -71,27 +71,41 @@ def ensure_skill_cache(
     repository: str,
     ref: str,
     source_path: str,
+    include_paths: list[str],
 ) -> Path:
     skill_path = cache / source_path
     if (skill_path / "SKILL.md").is_file():
+        missing_paths = [path for path in include_paths if not (cache / path).exists()]
+        if missing_paths:
+            raise SystemExit(
+                "skill cache is missing configured support files: "
+                + ", ".join(missing_paths)
+                + "; use a fresh --skill-cache"
+            )
         return skill_path
 
     installer = Path(__file__).with_name("install_skill.py")
-    subprocess.run(
-        [
-            sys.executable,
-            str(installer),
-            "--repository",
-            repository,
-            "--ref",
-            ref,
-            "--source-path",
-            source_path,
-            "--output",
-            str(cache),
-        ],
-        check=True,
-    )
+    command = [
+        sys.executable,
+        str(installer),
+        "--repository",
+        repository,
+        "--ref",
+        ref,
+        "--source-path",
+        source_path,
+        "--output",
+        str(cache),
+    ]
+    for include_path in include_paths:
+        command.extend(["--include-path", include_path])
+    subprocess.run(command, check=True)
+    missing_paths = [path for path in include_paths if not (cache / path).exists()]
+    if missing_paths:
+        raise SystemExit(
+            "installed skill cache is missing configured support files: "
+            + ", ".join(missing_paths)
+        )
     return skill_path
 
 
@@ -230,6 +244,25 @@ def collect_skill_artifacts(
     return copied, errors
 
 
+def copy_skill_support_files(
+    repository_root: Path,
+    skill_cache: Path,
+    support_files: list[str],
+) -> None:
+    for raw_name in support_files:
+        relative = Path(raw_name)
+        source = skill_cache / relative
+        destination = repository_root / relative
+        if not source.is_file():
+            raise RuntimeError(f"skill support file was not installed: {raw_name}")
+        if destination.exists():
+            raise RuntimeError(
+                f"skill support destination already exists in repository: {raw_name}"
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
 def run_case(
     *,
     args: argparse.Namespace,
@@ -239,6 +272,7 @@ def run_case(
     skill_revision: str | None,
     prompt_template: str | None,
     skill_artifacts: list[str],
+    skill_support_files: list[str],
     output_root: Path,
     work_root: Path,
 ) -> str:
@@ -320,6 +354,7 @@ def run_case(
         skill_destination = repository_root / ".claude" / "skills" / args.skill_directory
         skill_destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(skill_source, skill_destination)
+        copy_skill_support_files(repository_root, args.skill_cache, skill_support_files)
 
         with trajectory_path.open("w", encoding="utf-8") as trajectory, stderr_path.open(
             "w", encoding="utf-8"
@@ -380,6 +415,7 @@ def run_case(
         "case_id": case_id,
         "skill_name": args.skill_name,
         "skill_directory": args.skill_directory,
+        "skill_support_files": skill_support_files,
         "target_files": files,
         "started_at": started_at,
         "finished_at": utc_now(),
@@ -507,6 +543,16 @@ def main() -> int:
     ):
         raise SystemExit("output_files must be a list of strings")
     args.skill_artifacts = configured_artifacts
+    configured_support_files = skill_config.get("skill_support_files", [])
+    if not isinstance(configured_support_files, list) or not all(
+        isinstance(item, str) for item in configured_support_files
+    ):
+        raise SystemExit("skill_support_files must be a list of strings")
+    for raw_name in configured_support_files:
+        relative = Path(raw_name)
+        if relative.is_absolute() or ".." in relative.parts or raw_name in {"", "."}:
+            raise SystemExit(f"unsafe skill support file: {raw_name}")
+    args.skill_support_files = configured_support_files
     if args.skill_cache is None:
         args.skill_cache = Path(".runtime/skill-cache") / args.skill_name
     if not CASE_ID_RE.fullmatch(args.skill_name):
@@ -552,6 +598,7 @@ def main() -> int:
         args.skill_repository,
         args.skill_ref,
         args.skill_source_path,
+        args.skill_support_files,
     )
     skill_revision = git_revision(args.skill_cache)
 
@@ -566,6 +613,7 @@ def main() -> int:
             skill_revision=skill_revision,
             prompt_template=prompt_template,
             skill_artifacts=args.skill_artifacts,
+            skill_support_files=args.skill_support_files,
             output_root=args.output_root,
             work_root=args.work_root,
         )

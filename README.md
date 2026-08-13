@@ -252,7 +252,7 @@ Recommended evaluation joins reports to private labels by opaque `case_id`:
 4. Function and statement localization: report versus manually reviewed
    semantic annotations, not raw hunk context alone.
 
-## Regenerating the Dataset
+## Generating the Dataset
 
 Dataset generation remains an operator-only task. The public generator can be
 run where the original collection, artifacts, and private manifest are

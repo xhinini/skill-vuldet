@@ -165,7 +165,7 @@ The private evaluator package should keep these separate:
 
 Not every changed line or changed file necessarily contains the vulnerability. Supporting headers, callers, API migrations, and cleanup must not automatically be treated as root-cause locations.
 
-## Regenerating the Dataset
+## Generating the Dataset
 
 The all-target-file generator operates in the operator environment, where the original collection and private manifest are available:
 

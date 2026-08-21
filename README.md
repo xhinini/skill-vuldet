@@ -1,6 +1,6 @@
 # Linux Kernel Skill Evaluation
 
-This repository is the runnable public package for the 148-case Linux-kernel
+This repository is the runnable public package for the 100-case Linux-kernel
 security-review benchmark covering June 1, 2026 through July 1, 2026.
 
 The benchmark uses **target files plus repository context**:
@@ -35,7 +35,7 @@ location.
 ## Repository Layout
 
 ```text
-public/cases.csv                         Public 148-case manifest
+public/cases.csv                         Public 100-case manifest
 configs/security-review.json            Example skill configuration
 configs/security-review.prompt.txt      Example skill-specific prompt
 configs/vuln-scan.json                   vuln-scan configuration
@@ -52,19 +52,23 @@ scripts/run_skill_batch.py              Run one or all cases and save trajectori
 docs/semantic_annotation_guide.md       Private-labeling guidance
 ```
 
-The five sampling strata are:
+The top-10 CWEs sampling strata are:
 
 | CWE | Cases |
 |---|---:|
-| CWE-416 | 46 |
-| CWE-476 | 45 |
-| CWE-401 | 22 |
-| CWE-125 | 19 |
-| CWE-787 | 16 |
-| **Total** | **148** |
+| CWE-416 | 10 |
+| CWE-476 | 10 |
+| CWE-401 | 10 |
+| CWE-125 | 10 |
+| CWE-787 | 10 |
+| CWE-667 | 10 |
+| CWE-908 | 10 |
+| CWE-825 | 10 |
+| CWE-362 | 10 |
+| CWE-617 | 10 |
+| **Total** | **100** |
 
-All 148 cases are positive CVE cases. Negative controls are needed for
-precision, specificity, and false-positive metrics.
+All 100 cases are positive CVE cases. Negative controls are needed for precision, specificity, and false-positive metrics.
 
 ## Server Prerequisites
 
@@ -182,7 +186,7 @@ The selected skill is copied into the temporary repository under
 `skill_support_files` are also copied as read-only selected-skill reference
 material.
 
-## Run All 148 Cases
+## Run All 100 Cases
 
 After the one-case check succeeds, omit `--case-id`:
 
